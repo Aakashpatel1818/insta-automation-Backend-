@@ -1,15 +1,24 @@
+# =========================
 # Core Framework
+# =========================
 fastapi==0.104.1
 uvicorn[standard]==0.24.0
 python-dotenv==1.0.0
-pydantic==2.5.3
+
+# Pydantic (SAFE for Render + Python 3.11)
+pydantic==2.4.2
+pydantic-core==2.10.1
 pydantic-settings==2.1.0
 
+# =========================
 # Database
+# =========================
 motor==3.3.2
 pymongo==4.6.1
 
+# =========================
 # Authentication & Security
+# =========================
 python-jose[cryptography]==3.5.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.1.1
@@ -17,23 +26,33 @@ python-multipart==0.0.6
 PyJWT==2.10.1
 email-validator==2.1.0
 
+# =========================
 # HTTP & Requests
+# =========================
 httpx==0.25.1
 requests==2.31.0
 aiohttp==3.9.1
 
+# =========================
 # Task Scheduling
+# =========================
 APScheduler==3.10.4
 
+# =========================
 # Utilities
+# =========================
 python-dateutil==2.8.2
 click==8.1.7
 
-# Testing (optional on Render, safe to keep)
+# =========================
+# Testing (safe on Render)
+# =========================
 pytest==7.4.3
 pytest-asyncio==0.21.1
 
-# Dev tools (optional – can remove later)
+# =========================
+# Dev tools (optional but safe)
+# =========================
 black==23.12.0
 flake8==6.1.0
 isort==5.13.2
