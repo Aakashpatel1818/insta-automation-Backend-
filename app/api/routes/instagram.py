@@ -7,6 +7,7 @@ import httpx
 from fastapi import APIRouter, HTTPException, Query
 from app.core.config import settings
 from app.core.logging_config import get_logger
+from fastapi.responses import JSONResponse
 
 logger = get_logger(__name__)
 
@@ -331,6 +332,156 @@ async def handle_webhook(request_body: dict):
     # - if "messaging" in request_body: handle_dms(request_body)
     
     return {"status": "ok"}
+
+@router.get("/callback")
+async def instagram_callback(
+    code: str = Query(None),
+    error: str = Query(None),
+    error_reason: str = Query(None),
+    error_description: str = Query(None)
+):
+    """
+    Handle Instagram OAuth callback.
+    
+    After user logs in via Instagram, they are redirected here with a CODE.
+    This endpoint exchanges the code for an access token.
+    
+    Args:
+        code: Authorization code from Instagram
+        error: Error code if login failed
+        error_reason: Error reason
+        error_description: Error description
+        
+    Returns:
+        JSON with access_token or error message
+    """
+    
+    logger.info(f"Received Instagram OAuth callback")
+    
+    # Check for errors from Instagram
+    if error:
+        error_msg = error_description or error_reason or error
+        logger.warning(f"Instagram OAuth error: {error_msg}")
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": error,
+                "message": error_msg
+            }
+        )
+    
+    # Check if code is present
+    if not code:
+        logger.error("No authorization code received from Instagram")
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": "missing_code",
+                "message": "No authorization code received from Instagram"
+            }
+        )
+    
+    logger.info(f"Exchanging code for access token")
+    
+    # Use the existing exchange-token endpoint logic
+    if not settings.instagram_configured:
+        logger.error("Instagram API not configured")
+        return JSONResponse(
+            status_code=503,
+            content={
+                "error": "not_configured",
+                "message": "Instagram API is not configured"
+            }
+        )
+    
+    token_url = f"{settings.get_instagram_base_url()}/oauth/access_token"
+    
+    payload = {
+        "app_id": settings.INSTAGRAM_APP_ID,
+        "app_secret": settings.INSTAGRAM_APP_SECRET,
+        "grant_type": "authorization_code",
+        "redirect_uri": settings.INSTAGRAM_REDIRECT_URI,
+        "code": code,
+    }
+    
+    try:
+        logger.debug(f"Sending OAuth token exchange request to {token_url}")
+        
+        async with httpx.AsyncClient(timeout=10.0) as client:
+            response = await client.post(token_url, data=payload)
+        
+        logger.debug(f"Instagram API response status: {response.status_code}")
+        
+    except httpx.TimeoutException:
+        logger.error("Instagram API request timed out")
+        return JSONResponse(
+            status_code=504,
+            content={
+                "error": "timeout",
+                "message": "Instagram API request timed out"
+            }
+        )
+    except httpx.RequestError as e:
+        logger.error(f"Instagram API request failed: {e}")
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": "connection_failed",
+                "message": "Failed to connect to Instagram API"
+            }
+        )
+    except Exception as e:
+        logger.error(f"Unexpected error during token exchange: {e}", exc_info=True)
+        return JSONResponse(
+            status_code=500,
+            content={
+                "error": "internal_error",
+                "message": "Internal server error"
+            }
+        )
+    
+    try:
+        data = response.json()
+        logger.debug(f"Successfully parsed Instagram API response")
+    except ValueError:
+        logger.error(f"Failed to parse Instagram API response: {response.text}")
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": "invalid_response",
+                "message": "Invalid response from Instagram API"
+            }
+        )
+    
+    if "error" in data:
+        error_message = data.get("error_description", data.get("error", "Unknown error"))
+        logger.warning(f"Instagram API error: {error_message}")
+        return JSONResponse(
+            status_code=400,
+            content={
+                "error": data.get("error"),
+                "message": error_message
+            }
+        )
+    
+    if "access_token" not in data:
+        logger.error("Access token not in Instagram API response")
+        return JSONResponse(
+            status_code=502,
+            content={
+                "error": "no_token",
+                "message": "Instagram API did not return access token"
+            }
+        )
+    
+    logger.info(f"Successfully exchanged code for access token (user: {data.get('user_id')})")
+    
+    return {
+        "success": True,
+        "access_token": data["access_token"],
+        "user_id": data.get("user_id"),
+        "expires_in": data.get("expires_in"),
+    }
 
 
 @router.get("/health")
