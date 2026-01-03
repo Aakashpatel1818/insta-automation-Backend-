@@ -2,13 +2,14 @@
 
 from pydantic_settings import BaseSettings
 from typing import List
+import json
 import os
 
 class Settings(BaseSettings):
     # Application
     APP_NAME: str = "Instagram Automation Pro"
     APP_VERSION: str = "1.0.0"
-    DEBUG: bool = os.getenv("DEBUG", "True") == "True"
+    DEBUG: bool = os.getenv("DEBUG", "False") == "True"
     ENVIRONMENT: str = os.getenv("ENVIRONMENT", "development")
     
     # Server
@@ -24,6 +25,7 @@ class Settings(BaseSettings):
     INSTAGRAM_ACCESS_TOKEN: str = os.getenv("INSTAGRAM_ACCESS_TOKEN", "")
     INSTAGRAM_APP_ID: str = os.getenv("INSTAGRAM_APP_ID", "")
     INSTAGRAM_APP_SECRET: str = os.getenv("INSTAGRAM_APP_SECRET", "")
+    INSTAGRAM_REDIRECT_URI: str = os.getenv("INSTAGRAM_REDIRECT_URI", "")
     INSTAGRAM_WEBHOOK_VERIFY_TOKEN: str = os.getenv("INSTAGRAM_WEBHOOK_VERIFY_TOKEN", "")
     
     # JWT
@@ -33,13 +35,11 @@ class Settings(BaseSettings):
     
     # CORS
     FRONTEND_URL: str = os.getenv("FRONTEND_URL", "http://localhost:5173")
-    ALLOWED_ORIGINS: List[str] = [
-        os.getenv("FRONTEND_URL", "http://localhost:5173"),
-        "http://localhost:3000",
-        "http://localhost:8000"
-    ]
-    CORS_CREDENTIALS: bool = True
-    CORS_ALLOW_METHODS: List[str] = ["*"]
+    ALLOWED_ORIGINS: List[str] = json.loads(
+        os.getenv("ALLOWED_ORIGINS", '["http://localhost:5173","http://localhost:3000"]')
+    )
+    CORS_CREDENTIALS: bool = os.getenv("CORS_CREDENTIALS", "true").lower() == "true"
+    CORS_ALLOW_METHODS: List[str] = ["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"]
     CORS_ALLOW_HEADERS: List[str] = ["*"]
     
     # Timezone
@@ -47,6 +47,6 @@ class Settings(BaseSettings):
     
     class Config:
         env_file = ".env"
-        case_sensitive = True
+        case_sensitive = False
 
 settings = Settings()
