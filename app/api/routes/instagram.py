@@ -11,7 +11,9 @@ from fastapi.responses import JSONResponse
 
 logger = get_logger(__name__)
 
-router = APIRouter(prefix="/instagram", tags=["Instagram"])
+# instagram.py
+router = APIRouter(tags=["Instagram"])
+
 
 
 @router.post("/exchange-token")
