@@ -256,6 +256,83 @@ async def validate_token(access_token: str = Query(..., min_length=1)):
         raise HTTPException(status_code=500, detail="Internal server error")
 
 
+@router.get("/webhook")
+async def verify_webhook(
+    hub_mode: str = Query(...),
+    hub_verify_token: str = Query(...),
+    hub_challenge: str = Query(...)
+):
+    """
+    Webhook verification endpoint for Instagram.
+    
+    Meta sends a GET request to verify your webhook is active.
+    You must respond with the hub_challenge value.
+    
+    Args:
+        hub_mode: Should be "subscribe"
+        hub_verify_token: Token you set in Meta Dashboard
+        hub_challenge: Random string Meta wants you to echo back
+        
+    Returns:
+        int: The challenge value (Meta expects this to verify)
+    """
+    
+    logger.info(f"Webhook verification request received: mode={hub_mode}")
+    
+    # Get your verify token from .env
+    verify_token = getattr(settings, 'INSTAGRAM_WEBHOOK_VERIFY_TOKEN', None)
+    
+    if not verify_token:
+        logger.error("INSTAGRAM_WEBHOOK_VERIFY_TOKEN not configured in .env")
+        raise HTTPException(
+            status_code=503,
+            detail="Webhook not configured"
+        )
+    
+    # Check if token matches
+    if hub_verify_token != verify_token:
+        logger.warning(f"Webhook verification failed: invalid token")
+        raise HTTPException(
+            status_code=403,
+            detail="Webhook verification failed"
+        )
+    
+    if hub_mode != "subscribe":
+        logger.warning(f"Webhook verification failed: invalid mode {hub_mode}")
+        raise HTTPException(
+            status_code=403,
+            detail="Invalid hub.mode"
+        )
+    
+    logger.info("Webhook verified successfully")
+    return int(hub_challenge)
+
+
+@router.post("/webhook")
+async def handle_webhook(request_body: dict):
+    """
+    Handle incoming webhook events from Instagram.
+    
+    Instagram sends POST requests with comments, DMs, etc.
+    
+    Args:
+        request_body: Event data from Instagram
+        
+    Returns:
+        dict: Acknowledgment that you received it
+    """
+    
+    logger.info(f"Webhook event received: {request_body}")
+    
+    # TODO: Process webhook events
+    # Extract comments, DMs, etc. and store in database
+    # Example:
+    # - if "comments" in request_body: handle_comments(request_body)
+    # - if "messaging" in request_body: handle_dms(request_body)
+    
+    return {"status": "ok"}
+
+
 @router.get("/health")
 async def instagram_api_health():
     """
