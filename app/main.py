@@ -11,7 +11,7 @@ from dotenv import load_dotenv
 load_dotenv()
 
 # Import routes
-from app.api.routes import auth, rules, webhooks, logs
+from app.api.routes import auth, rules, webhooks, logs, instagram  # ← ADDED instagram
 from app.core.config import settings
 
 # Lifespan context manager
@@ -68,6 +68,7 @@ app.include_router(auth.router, prefix="/api/auth", tags=["Authentication"])
 app.include_router(rules.router, prefix="/api/rules", tags=["Rules Management"])
 app.include_router(webhooks.router, prefix="/api/webhook", tags=["Webhooks"])
 app.include_router(logs.router, prefix="/api/logs", tags=["Logs & Analytics"])
+app.include_router(instagram.router, prefix="/instagram", tags=["Instagram"])  # ← ADDED
 
 if __name__ == "__main__":
     import uvicorn
