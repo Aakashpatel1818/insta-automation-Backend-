@@ -1,10 +1,6 @@
 import requests
 from fastapi import APIRouter, HTTPException
-from app.core.config import (
-    INSTAGRAM_APP_ID,
-    INSTAGRAM_APP_SECRET,
-    INSTAGRAM_REDIRECT_URI,
-)
+from app.core.config import settings
 
 router = APIRouter(prefix="/instagram", tags=["Instagram"])
 
@@ -19,10 +15,10 @@ def exchange_code_for_token(code: str):
     token_url = "https://api.instagram.com/oauth/access_token"
 
     payload = {
-        "app_id": INSTAGRAM_APP_ID,
-        "app_secret": INSTAGRAM_APP_SECRET,
+        "app_id": settings.INSTAGRAM_APP_ID,
+        "app_secret": settings.INSTAGRAM_APP_SECRET,
         "grant_type": "authorization_code",
-        "redirect_uri": INSTAGRAM_REDIRECT_URI,
+        "redirect_uri": settings.INSTAGRAM_REDIRECT_URI,
         "code": code,
     }
 
