@@ -18,31 +18,17 @@ async def exchange_code_for_token(code: str = Query(..., min_length=1)):
     """
     Exchange Instagram authorization code for access token.
     
-    This endpoint handles OAuth flow step 2: exchanging authorization code
-    for a short-lived access token that can be exchanged for long-lived token.
+    Handles OAuth flow step 2: exchange code for short-lived access token.
     
     Args:
-        code (str): Authorization code from Instagram OAuth flow
+        code (str): Authorization code from Instagram OAuth
         
     Returns:
-        dict: Contains access_token, user_id, and expires_in
-        
-    Raises:
-        HTTPException: If Instagram API returns error or connection fails
-        
-    Example:
-        POST /instagram/exchange-token?code=abc123xyz
-        Response:
-        {
-            "access_token": "token_here",
-            "user_id": "123456789",
-            "expires_in": 3600
-        }
+        dict: {access_token, user_id, expires_in}
     """
     
     logger.info(f"Processing OAuth token exchange for code: {code[:10]}...")
     
-    # Verify Instagram API is configured
     if not settings.instagram_configured:
         logger.error("Instagram API not configured")
         raise HTTPException(
@@ -66,7 +52,6 @@ async def exchange_code_for_token(code: str = Query(..., min_length=1)):
         async with httpx.AsyncClient(timeout=10.0) as client:
             response = await client.post(token_url, data=payload)
         
-        # Log response status
         logger.debug(f"Instagram API response status: {response.status_code}")
         
     except httpx.TimeoutException:
@@ -88,7 +73,6 @@ async def exchange_code_for_token(code: str = Query(..., min_length=1)):
             detail="Internal server error during token exchange",
         )
     
-    # Parse response
     try:
         data = response.json()
         logger.debug(f"Successfully parsed Instagram API response")
@@ -99,7 +83,6 @@ async def exchange_code_for_token(code: str = Query(..., min_length=1)):
             detail="Invalid response format from Instagram API",
         )
     
-    # Check for errors in response
     if "error" in data:
         error_message = data.get("error_description", data.get("error", "Unknown error"))
         logger.warning(f"Instagram API error: {error_message}")
@@ -108,7 +91,6 @@ async def exchange_code_for_token(code: str = Query(..., min_length=1)):
             detail=error_message,
         )
     
-    # Verify required fields
     if "access_token" not in data:
         logger.error("Access token not in Instagram API response")
         raise HTTPException(
@@ -130,20 +112,13 @@ async def refresh_access_token(access_token: str = Query(..., min_length=1)):
     """
     Refresh short-lived access token to long-lived token.
     
-    Instagram access tokens expire after a short period. This endpoint
-    exchanges a short-lived token for a long-lived one (valid for ~60 days).
+    Instagram tokens expire. Use this to get a ~60 day token.
     
     Args:
-        access_token (str): Short-lived access token to refresh
+        access_token (str): Short-lived token to refresh
         
     Returns:
-        dict: Contains new long-lived access_token and expires_in
-        
-    Raises:
-        HTTPException: If token refresh fails
-        
-    Example:
-        POST /instagram/refresh-token?access_token=short_lived_token
+        dict: {access_token, expires_in}
     """
     
     logger.info("Processing access token refresh")
@@ -186,7 +161,6 @@ async def refresh_access_token(access_token: str = Query(..., min_length=1)):
         logger.error(f"Unexpected error during token refresh: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail="Internal server error")
     
-    # Parse response
     try:
         data = response.json()
     except ValueError:
@@ -196,7 +170,6 @@ async def refresh_access_token(access_token: str = Query(..., min_length=1)):
             detail="Invalid response from Instagram API",
         )
     
-    # Check for errors
     if "error" in data:
         error_message = data.get("error_description", data.get("error", "Unknown error"))
         logger.warning(f"Token refresh error: {error_message}")
@@ -229,10 +202,7 @@ async def validate_token(access_token: str = Query(..., min_length=1)):
         access_token (str): Token to validate
         
     Returns:
-        dict: Token validity info
-        
-    Example:
-        GET /instagram/validate-token?access_token=your_token
+        dict: Token validity and info
     """
     
     logger.info("Validating Instagram access token")
@@ -243,7 +213,6 @@ async def validate_token(access_token: str = Query(..., min_length=1)):
             detail="Instagram API is not configured",
         )
     
-    # Use debug endpoint to validate token
     debug_url = f"{settings.get_instagram_base_url()}/debug_token"
     
     params = {
@@ -264,7 +233,6 @@ async def validate_token(access_token: str = Query(..., min_length=1)):
                 "error": data.get("error", {}).get("message", "Invalid token"),
             }
         
-        # Extract token info
         token_data = data.get("data", {})
         is_valid = token_data.get("is_valid", False)
         
