@@ -1,7 +1,7 @@
 """Rules management routes."""
 
 from fastapi import APIRouter, HTTPException, Depends, status, Query
-from fastapi.security import HTTPBearer, HTTPAuthCredentials
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional, List
 from datetime import datetime
 from app.db.models import Rule, RuleType, MessageResponse
@@ -12,7 +12,7 @@ router = APIRouter()
 security = HTTPBearer()
 
 
-def get_current_user(credentials: HTTPAuthCredentials = Depends(security)) -> str:
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
     """Extract user ID from token."""
     try:
         from jose import jwt
