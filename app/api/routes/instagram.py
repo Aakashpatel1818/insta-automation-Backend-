@@ -1,7 +1,8 @@
 """Instagram API integration routes."""
 
 from fastapi import APIRouter, HTTPException, Depends, status
-from fastapi.security import HTTPBearer, HTTPAuthCredentials
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
+
 import logging
 
 logger = logging.getLogger(__name__)
@@ -9,7 +10,7 @@ router = APIRouter()
 security = HTTPBearer()
 
 
-def get_current_user(credentials: HTTPAuthCredentials = Depends(security)) -> str:
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
     """Extract user ID from token."""
     try:
         from jose import jwt
