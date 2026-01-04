@@ -1,268 +1,275 @@
-"""Rules management routes"""
+"""Rules management routes."""
 
-from fastapi import APIRouter, HTTPException, status
-from pydantic import BaseModel, Field
-from typing import List, Optional
+from fastapi import APIRouter, HTTPException, Depends, status, Query
+from fastapi.security import HTTPBearer, HTTPAuthCredentials
+from typing import Optional, List
 from datetime import datetime
-import uuid
+from app.db.models import Rule, RuleType, MessageResponse
+import logging
 
+logger = logging.getLogger(__name__)
 router = APIRouter()
+security = HTTPBearer()
 
-# In-memory storage (replace with database in production)
-rules_db = {}
 
-class RuleToggle(BaseModel):
-    """Toggle configuration for rule"""
-    comment_only: bool = False  # true = only reply to comment
-    send_dm: bool = False       # true = also send DM
-    dm_message: Optional[str] = None
+def get_current_user(credentials: HTTPAuthCredentials = Depends(security)) -> str:
+    """Extract user ID from token."""
+    try:
+        from jose import jwt
+        import os
+        token = credentials.credentials
+        SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key")
+        ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
+        payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
+        user_id = payload.get("sub")
+        if not user_id:
+            raise HTTPException(status_code=401, detail="Invalid token")
+        return user_id
+    except Exception as e:
+        logger.error(f"Token verification error: {str(e)}")
+        raise HTTPException(status_code=401, detail="Invalid token")
 
-class Rule(BaseModel):
-    """Automation rule model"""
-    id: Optional[str] = None
-    rule_name: str
-    keywords: List[str]
-    comment_reply: str
-    target_account: str
-    target_content_type: str  # 'post', 'reel', 'story', 'all-content'
-    target_content_ids: List[str]  # specific content IDs, empty if all-content
-    toggle: RuleToggle
-    is_active: bool = True
-    created_at: Optional[str] = None
-    updated_at: Optional[str] = None
-
-class RuleCreate(BaseModel):
-    """Rule creation model (without id and timestamps)"""
-    rule_name: str
-    keywords: List[str] = Field(..., min_items=1)
-    comment_reply: str
-    target_account: str
-    target_content_type: str
-    target_content_ids: List[str] = []
-    toggle: RuleToggle
-    is_active: bool = True
-
-class RuleUpdate(BaseModel):
-    """Rule update model"""
-    rule_name: Optional[str] = None
-    keywords: Optional[List[str]] = None
-    comment_reply: Optional[str] = None
-    target_account: Optional[str] = None
-    target_content_type: Optional[str] = None
-    target_content_ids: Optional[List[str]] = None
-    toggle: Optional[RuleToggle] = None
-    is_active: Optional[bool] = None
-
-class RuleToggleStatus(BaseModel):
-    """Model for toggling rule active status"""
-    is_active: bool
 
 @router.get("/", response_model=dict)
-async def get_rules(
-    filter: Optional[str] = None,  # 'all', 'active', 'inactive'
-    account: Optional[str] = None   # filter by target account
+async def list_rules(
+    user_id: str = Depends(get_current_user),
+    skip: int = Query(0, ge=0),
+    limit: int = Query(10, ge=1, le=100),
+    is_active: Optional[bool] = None
 ):
     """
-    Get all rules with optional filtering
+    Get all rules for current user with pagination.
     
-    Query Parameters:
-    - filter: 'all', 'active', or 'inactive'
-    - account: filter by target_account
+    - **skip**: Number of items to skip
+    - **limit**: Number of items to return
+    - **is_active**: Filter by active status (optional)
     """
-    rules = list(rules_db.values())
+    try:
+        # TODO: Replace with actual MongoDB query
+        # query = {"user_id": user_id}
+        # if is_active is not None:
+        #     query["is_active"] = is_active
+        # 
+        # total = await db.rules.count_documents(query)
+        # rules = await db.rules.find(query).skip(skip).limit(limit).to_list(length=limit)
+        
+        # Mock data for now
+        mock_rules = [
+            {
+                "_id": "rule_1",
+                "user_id": user_id,
+                "name": "Welcome DM",
+                "rule_type": "dm",
+                "trigger_keywords": ["hello", "hi"],
+                "action_message": "Thanks for reaching out!",
+                "is_active": True,
+                "success_count": 45,
+                "failure_count": 2,
+                "created_at": datetime.utcnow().isoformat()
+            }
+        ]
+        
+        return {
+            "data": mock_rules,
+            "total": len(mock_rules),
+            "skip": skip,
+            "limit": limit,
+            "pages": (len(mock_rules) + limit - 1) // limit
+        }
+    except Exception as e:
+        logger.error(f"Error listing rules: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch rules"
+        )
+
+
+@router.post("/", response_model=dict)
+async def create_rule(
+    rule: dict,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Create a new automation rule.
     
-    # Apply filters
-    if filter == 'active':
-        rules = [r for r in rules if r.is_active]
-    elif filter == 'inactive':
-        rules = [r for r in rules if not r.is_active]
-    
-    if account:
-        rules = [r for r in rules if r.target_account == account]
-    
-    return {
-        "rules": rules,
-        "count": len(rules),
-        "message": "Rules retrieved successfully"
+    Request body:
+    ```json
+    {
+        "name": "Welcome DM",
+        "description": "Send welcome message",
+        "rule_type": "dm",
+        "trigger_keywords": ["hello", "hi"],
+        "action_message": "Thanks for reaching out!",
+        "is_case_sensitive": false
     }
-
-@router.post("/", status_code=status.HTTP_201_CREATED, response_model=Rule)
-async def create_rule(rule: RuleCreate):
+    ```
     """
-    Create new automation rule
-    
-    Validates:
-    - At least one keyword must be provided
-    - target_content_type must be valid
-    - If not 'all-content', at least one content_id required
-    """
-    # Validation
-    if not rule.keywords:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one keyword is required"
-        )
-    
-    valid_content_types = ['post', 'reel', 'story', 'all-content']
-    if rule.target_content_type not in valid_content_types:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail=f"Invalid content type. Must be one of: {valid_content_types}"
-        )
-    
-    if rule.target_content_type != 'all-content' and not rule.target_content_ids:
-        raise HTTPException(
-            status_code=status.HTTP_400_BAD_REQUEST,
-            detail="At least one content item must be selected for specific content types"
-        )
-    
-    # Create rule
-    rule_id = str(uuid.uuid4())
-    timestamp = datetime.utcnow().isoformat()
-    
-    new_rule = Rule(
-        id=rule_id,
-        rule_name=rule.rule_name,
-        keywords=rule.keywords,
-        comment_reply=rule.comment_reply,
-        target_account=rule.target_account,
-        target_content_type=rule.target_content_type,
-        target_content_ids=rule.target_content_ids,
-        toggle=rule.toggle,
-        is_active=rule.is_active,
-        created_at=timestamp,
-        updated_at=timestamp
-    )
-    
-    rules_db[rule_id] = new_rule
-    
-    return new_rule
-
-@router.get("/{rule_id}", response_model=Rule)
-async def get_rule(rule_id: str):
-    """Get specific rule by ID"""
-    if rule_id not in rules_db:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Rule with id '{rule_id}' not found"
-        )
-    
-    return rules_db[rule_id]
-
-@router.put("/{rule_id}", response_model=Rule)
-async def update_rule(rule_id: str, rule_update: RuleUpdate):
-    """
-    Update rule including toggles
-    
-    Allows partial updates - only provided fields will be updated
-    """
-    if rule_id not in rules_db:
-        raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Rule with id '{rule_id}' not found"
-        )
-    
-    existing_rule = rules_db[rule_id]
-    
-    # Update only provided fields
-    update_data = rule_update.dict(exclude_unset=True)
-    
-    # Validation for content type changes
-    if 'target_content_type' in update_data:
-        content_type = update_data['target_content_type']
-        valid_content_types = ['post', 'reel', 'story', 'all-content']
-        if content_type not in valid_content_types:
+    try:
+        # Validate required fields
+        required_fields = ["name", "rule_type", "action_message"]
+        missing = [f for f in required_fields if f not in rule]
+        if missing:
             raise HTTPException(
-                status_code=status.HTTP_400_BAD_REQUEST,
-                detail=f"Invalid content type. Must be one of: {valid_content_types}"
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Missing required fields: {', '.join(missing)}"
             )
-    
-    # Update the rule
-    for field, value in update_data.items():
-        setattr(existing_rule, field, value)
-    
-    existing_rule.updated_at = datetime.utcnow().isoformat()
-    
-    return existing_rule
-
-@router.patch("/{rule_id}/toggle", response_model=Rule)
-async def toggle_rule_status(rule_id: str, toggle_data: RuleToggleStatus):
-    """
-    Toggle rule active/inactive status
-    
-    Quick endpoint for enabling/disabling rules
-    """
-    if rule_id not in rules_db:
+        
+        # Validate rule_type
+        valid_types = ["comment", "dm", "follow", "unfollow"]
+        if rule.get("rule_type") not in valid_types:
+            raise HTTPException(
+                status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+                detail=f"Invalid rule_type. Must be one of: {', '.join(valid_types)}"
+            )
+        
+        # TODO: Insert into MongoDB
+        # rule["user_id"] = user_id
+        # rule["is_active"] = rule.get("is_active", True)
+        # rule["created_at"] = datetime.utcnow()
+        # rule["updated_at"] = datetime.utcnow()
+        # result = await db.rules.insert_one(rule)
+        # rule["_id"] = str(result.inserted_id)
+        
+        rule["_id"] = "new_rule_id"
+        rule["user_id"] = user_id
+        rule["created_at"] = datetime.utcnow().isoformat()
+        
+        return {
+            "data": rule,
+            "message": "Rule created successfully",
+            "status": "success"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error creating rule: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Rule with id '{rule_id}' not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to create rule"
         )
-    
-    rule = rules_db[rule_id]
-    rule.is_active = toggle_data.is_active
-    rule.updated_at = datetime.utcnow().isoformat()
-    
-    return rule
 
-@router.delete("/{rule_id}", status_code=status.HTTP_200_OK)
-async def delete_rule(rule_id: str):
-    """Delete rule permanently"""
-    if rule_id not in rules_db:
+
+@router.get("/{rule_id}", response_model=dict)
+async def get_rule(
+    rule_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Get a specific rule by ID.
+    """
+    try:
+        # TODO: Fetch from MongoDB
+        # rule = await db.rules.find_one({"_id": ObjectId(rule_id), "user_id": user_id})
+        # if not rule:
+        #     raise HTTPException(status_code=404, detail="Rule not found")
+        
+        rule = {
+            "_id": rule_id,
+            "user_id": user_id,
+            "name": "Welcome DM",
+            "rule_type": "dm",
+            "trigger_keywords": ["hello", "hi"],
+            "action_message": "Thanks for reaching out!"
+        }
+        
+        return {"data": rule, "status": "success"}
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error fetching rule: {str(e)}")
         raise HTTPException(
-            status_code=status.HTTP_404_NOT_FOUND,
-            detail=f"Rule with id '{rule_id}' not found"
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to fetch rule"
         )
-    
-    deleted_rule = rules_db.pop(rule_id)
-    
-    return {
-        "message": "Rule deleted successfully",
-        "deleted_rule": deleted_rule
-    }
 
-@router.post("/bulk-delete", status_code=status.HTTP_200_OK)
-async def bulk_delete_rules(rule_ids: List[str]):
-    """Delete multiple rules at once"""
-    deleted = []
-    not_found = []
-    
-    for rule_id in rule_ids:
-        if rule_id in rules_db:
-            deleted.append(rules_db.pop(rule_id))
-        else:
-            not_found.append(rule_id)
-    
-    return {
-        "message": f"Deleted {len(deleted)} rule(s)",
-        "deleted_count": len(deleted),
-        "not_found_count": len(not_found),
-        "not_found_ids": not_found
-    }
 
-@router.get("/stats/summary")
-async def get_rules_stats():
-    """Get summary statistics about rules"""
-    rules = list(rules_db.values())
-    
-    active_rules = [r for r in rules if r.is_active]
-    inactive_rules = [r for r in rules if not r.is_active]
-    
-    # Count by content type
-    content_type_counts = {}
-    for rule in rules:
-        content_type = rule.target_content_type
-        content_type_counts[content_type] = content_type_counts.get(content_type, 0) + 1
-    
-    # Count by account
-    account_counts = {}
-    for rule in rules:
-        account = rule.target_account
-        account_counts[account] = account_counts.get(account, 0) + 1
-    
-    return {
-        "total_rules": len(rules),
-        "active_rules": len(active_rules),
-        "inactive_rules": len(inactive_rules),
-        "by_content_type": content_type_counts,
-        "by_account": account_counts
-    }
+@router.put("/{rule_id}", response_model=dict)
+async def update_rule(
+    rule_id: str,
+    updates: dict,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Update an existing rule.
+    """
+    try:
+        # TODO: Update in MongoDB
+        # result = await db.rules.update_one(
+        #     {"_id": ObjectId(rule_id), "user_id": user_id},
+        #     {"$set": {**updates, "updated_at": datetime.utcnow()}}
+        # )
+        # if result.matched_count == 0:
+        #     raise HTTPException(status_code=404, detail="Rule not found")
+        
+        updates["updated_at"] = datetime.utcnow().isoformat()
+        
+        return {
+            "data": updates,
+            "message": "Rule updated successfully",
+            "status": "success"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error updating rule: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to update rule"
+        )
+
+
+@router.delete("/{rule_id}", response_model=dict)
+async def delete_rule(
+    rule_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Delete a rule.
+    """
+    try:
+        # TODO: Delete from MongoDB
+        # result = await db.rules.delete_one({"_id": ObjectId(rule_id), "user_id": user_id})
+        # if result.deleted_count == 0:
+        #     raise HTTPException(status_code=404, detail="Rule not found")
+        
+        return {
+            "message": "Rule deleted successfully",
+            "status": "success"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error deleting rule: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to delete rule"
+        )
+
+
+@router.post("/{rule_id}/toggle", response_model=dict)
+async def toggle_rule(
+    rule_id: str,
+    user_id: str = Depends(get_current_user)
+):
+    """
+    Toggle rule active/inactive status.
+    """
+    try:
+        # TODO: Update in MongoDB
+        # rule = await db.rules.find_one({"_id": ObjectId(rule_id), "user_id": user_id})
+        # new_status = not rule.get("is_active", True)
+        # await db.rules.update_one({"_id": ObjectId(rule_id)}, {"$set": {"is_active": new_status}})
+        
+        return {
+            "message": "Rule toggled successfully",
+            "is_active": True,
+            "status": "success"
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"Error toggling rule: {str(e)}")
+        raise HTTPException(
+            status_code=status.HTTP_500_INTERNAL_SERVER_ERROR,
+            detail="Failed to toggle rule"
+        )
