@@ -1,7 +1,7 @@
 """Authentication routes."""
 
 from fastapi import APIRouter, HTTPException, Depends, status
-from fastapi.security import HTTPBearer, HTTPAuthCredentials
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from pydantic import BaseModel, EmailStr, Field
 from datetime import datetime, timedelta
 from typing import Optional
@@ -97,7 +97,7 @@ def create_access_token(user_id: str, expires_delta: Optional[timedelta] = None)
         )
 
 
-def verify_token(credentials: HTTPAuthCredentials) -> dict:
+def verify_token(credentials: HTTPAuthorizationCredentials) -> dict:
     """Verify JWT token."""
     token = credentials.credentials
     try:
@@ -239,7 +239,7 @@ async def login(request: LoginRequest):
 
 
 @router.post("/me")
-async def get_current_user(credentials: HTTPAuthCredentials = Depends(security)):
+async def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Get current authenticated user.
     """
@@ -272,7 +272,7 @@ async def get_current_user(credentials: HTTPAuthCredentials = Depends(security))
 
 
 @router.post("/logout")
-async def logout(credentials: HTTPAuthCredentials = Depends(security)):
+async def logout(credentials: HTTPAuthorizationCredentials = Depends(security)):
     """
     Logout user (client should discard token).
     """
@@ -282,7 +282,7 @@ async def logout(credentials: HTTPAuthCredentials = Depends(security)):
 @router.post("/change-password")
 async def change_password(
     request: ChangePasswordRequest,
-    credentials: HTTPAuthCredentials = Depends(security)
+    credentials: HTTPAuthorizationCredentials = Depends(security)
 ):
     """
     Change user password.
