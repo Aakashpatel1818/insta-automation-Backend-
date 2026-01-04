@@ -1,19 +1,34 @@
 """Main FastAPI application."""
 
 import logging
+import os
 from contextlib import asynccontextmanager
+from datetime import datetime
+
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.exceptions import RequestValidationError
-import os
-from datetime import datetime
 
 # Import routes
 from app.api.routes import auth, rules, logs, instagram, webhooks
-from app.core.logging_config import setup_logging
 
-# Setup logging
+
+# ==================== Logging Setup ====================
+
+def setup_logging():
+    """Configure application logging."""
+    log_level = logging.DEBUG if os.getenv("DEBUG", "False").lower() == "true" else logging.INFO
+    
+    logging.basicConfig(
+        level=log_level,
+        format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+        handlers=[
+            logging.StreamHandler()
+        ]
+    )
+
+
 setup_logging()
 logger = logging.getLogger(__name__)
 
@@ -63,6 +78,8 @@ async def lifespan(app: FastAPI):
     """Manage application lifespan events."""
     # Startup
     logger.info("🚀 Starting Instagram Automation Backend")
+    logger.info(f"Environment: {os.getenv('ENVIRONMENT', 'development')}")
+    
     try:
         await Database.connect_db()
     except Exception as e:
@@ -89,23 +106,42 @@ app = FastAPI(
 )
 
 
-# ==================== CORS Middleware ====================
+# ==================== CORS Configuration ====================
 
-allowed_origins = os.getenv(
+# Get allowed origins from environment
+allowed_origins_str = os.getenv(
     "ALLOWED_ORIGINS",
     "http://localhost:3000,http://localhost:5173,http://127.0.0.1:3000,http://127.0.0.1:5173"
-).split(",")
+)
 
+# Parse and clean origins
+allowed_origins = [origin.strip() for origin in allowed_origins_str.split(",") if origin.strip()]
+
+# Log CORS configuration
+logger.info(f"✅ CORS Configuration: {len(allowed_origins)} origin(s) allowed")
+for origin in allowed_origins:
+    logger.info(f"   - {origin}")
+
+# Add CORS middleware
 app.add_middleware(
     CORSMiddleware,
     allow_origins=allowed_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=[
+        "Content-Type",
+        "Authorization",
+        "Accept",
+        "Origin",
+        "X-Requested-With",
+        "X-CSRF-Token"
+    ],
+    expose_headers=["Content-Length", "X-Total-Count"],
+    max_age=3600,
 )
 
 
-# ==================== Error Handling Middleware ====================
+# ==================== Error Handling ====================
 
 class ErrorResponse:
     """Error response formatter."""
@@ -148,7 +184,7 @@ async def validation_exception_handler(request: Request, exc: RequestValidationE
 @app.exception_handler(Exception)
 async def general_exception_handler(request: Request, exc: Exception):
     """Handle uncaught exceptions."""
-    logger.error(f"Unhandled exception: {str(exc)}")
+    logger.error(f"Unhandled exception: {str(exc)}", exc_info=True)
     return JSONResponse(
         status_code=500,
         content=ErrorResponse.format(
@@ -159,12 +195,16 @@ async def general_exception_handler(request: Request, exc: Exception):
     )
 
 
-# ==================== Middleware for Request Logging ====================
+# ==================== Request Logging Middleware ====================
 
 @app.middleware("http")
 async def log_requests(request: Request, call_next):
     """Log all incoming requests."""
     start_time = datetime.utcnow()
+    
+    # Log request details
+    logger.debug(f"Request: {request.method} {request.url.path}")
+    logger.debug(f"Origin: {request.headers.get('origin', 'No origin header')}")
     
     try:
         response = await call_next(request)
@@ -191,28 +231,26 @@ async def log_requests(request: Request, call_next):
 
 @app.get("/health", tags=["Health"])
 async def health_check():
-    """
-    Health check endpoint.
-    """
+    """Health check endpoint."""
     return {
         "status": "healthy",
         "service": "Instagram Automation Pro API",
         "version": "1.0.0",
+        "environment": os.getenv("ENVIRONMENT", "development"),
         "timestamp": datetime.utcnow().isoformat()
     }
 
 
 @app.get("/", tags=["Root"])
 async def root():
-    """
-    Root endpoint with API information.
-    """
+    """Root endpoint with API information."""
     return {
         "message": "Welcome to Instagram Automation Pro API",
         "version": "1.0.0",
         "docs": "/api/docs",
         "redoc": "/api/redoc",
-        "health": "/health"
+        "health": "/health",
+        "environment": os.getenv("ENVIRONMENT", "development")
     }
 
 

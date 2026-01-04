@@ -1,7 +1,7 @@
 """Logs and analytics routes."""
 
 from fastapi import APIRouter, HTTPException, Depends, status, Query
-from fastapi.security import HTTPBearer, HTTPAuthCredentials
+from fastapi.security import HTTPBearer, HTTPAuthorizationCredentials
 from typing import Optional
 from datetime import datetime, timedelta
 import logging
@@ -11,13 +11,17 @@ router = APIRouter()
 security = HTTPBearer()
 
 
-def get_current_user(credentials: HTTPAuthCredentials = Depends(security)) -> str:
+
+from jose import jwt
+import os
+
+def get_current_user(credentials: HTTPAuthorizationCredentials = Depends(security)) -> str:
     """Extract user ID from token."""
     try:
-        from jose import jwt
-        import os
         token = credentials.credentials
-        SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-secret-key")
+        SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+        if not SECRET_KEY:
+          raise ValueError("JWT_SECRET_KEY environment variable is required")
         ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
         payload = jwt.decode(token, SECRET_KEY, algorithms=[ALGORITHM])
         user_id = payload.get("sub")
